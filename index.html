@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#000000">
+  <meta name="description" content="SOCIAL DEALZ: a marketplace for social media handles and digital services.">
+  <title>SOCIAL DEALZ</title>
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="/" aria-label="SOCIAL DEALZ home">SOCIAL DEALZ</a>
+    <form class="search" id="search-form" role="search">
+      <label class="sr-only" for="q">Search listings</label>
+      <input id="q" name="q" type="search" placeholder="Search handles and services" maxlength="100" autocomplete="off" enterkeyhint="search">
+      <button type="submit" class="btn">Search</button>
+    </form>
+  </header>
+
+  <nav class="cats" id="categories" aria-label="Categories"></nav>
+
+  <main>
+    <p class="notice" id="placeholder-notice" hidden>
+      This is a placeholder catalogue. Entries marked PLACEHOLDER are examples with no real price or availability.
+    </p>
+
+    <section class="toolbar" aria-label="Sort and filter">
+      <button type="button" class="btn btn-ghost" id="filter-toggle" aria-expanded="false" aria-controls="filters">Filters</button>
+      <label class="sort">
+        <span class="sr-only">Sort listings</span>
+        <select id="sort">
+          <option value="newest">Newest</option>
+          <option value="price_asc">Price: low to high</option>
+          <option value="price_desc">Price: high to low</option>
+        </select>
+      </label>
+      <p class="count" id="result-count" aria-live="polite"></p>
+    </section>
+
+    <form class="filters" id="filters" hidden>
+      <label>Availability
+        <select id="f-availability">
+          <option value="">Any</option>
+          <option value="available">Available</option>
+          <option value="sold_out">Sold out</option>
+          <option value="unconfirmed">Not confirmed</option>
+        </select>
+      </label>
+      <label>Min price (₦)
+        <input id="f-min" type="number" inputmode="numeric" min="0" max="20000000" step="1" placeholder="0">
+      </label>
+      <label>Max price (₦)
+        <input id="f-max" type="number" inputmode="numeric" min="0" max="20000000" step="1" placeholder="Any">
+      </label>
+      <div class="filter-actions">
+        <button type="submit" class="btn">Apply filters</button>
+        <button type="button" class="btn btn-ghost" id="filters-reset">Reset</button>
+      </div>
+    </form>
+
+    <div id="status" class="status" role="status"></div>
+    <ul class="grid" id="grid"></ul>
+
+    <nav class="pager" id="pager" aria-label="Pages" hidden>
+      <button type="button" class="btn btn-ghost" id="prev">Previous</button>
+      <span id="page-label"></span>
+      <button type="button" class="btn btn-ghost" id="next">Next</button>
+    </nav>
+  </main>
+
+  <dialog id="product-dialog" aria-labelledby="dialog-title">
+    <button type="button" class="dialog-close" id="dialog-close" aria-label="Close">×</button>
+    <div id="dialog-body"></div>
+  </dialog>
+
+  <script src="/js/app.js" defer></script>
+</body>
+</html>

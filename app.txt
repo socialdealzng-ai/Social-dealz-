@@ -1,0 +1,309 @@
+// SOCIAL DEALZ storefront (Stage 1: browse, search, filter, product details).
+// All text from the API is inserted with textContent / DOM nodes, never innerHTML.
+(() => {
+  'use strict';
+
+  const PAGE_SIZE = 12;
+  const AVAILABILITY_LABELS = {
+    available: 'Available',
+    sold_out: 'Sold out',
+    unconfirmed: 'Availability not confirmed',
+  };
+  const naira = new Intl.NumberFormat('en-NG', {
+    style: 'currency',
+    currency: 'NGN',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  });
+
+  const state = { q: '', category: '', availability: '', minPrice: '', maxPrice: '', sort: 'newest', page: 1 };
+  let totalPages = 1;
+  let requestId = 0;
+  let debounceTimer;
+
+  const $ = (id) => document.getElementById(id);
+
+  function el(tag, props = {}, ...children) {
+    const node = document.createElement(tag);
+    for (const [key, value] of Object.entries(props)) {
+      if (value === undefined || value === null || value === false) continue;
+      if (key === 'class') node.className = value;
+      else if (key === 'text') node.textContent = value;
+      else if (key.startsWith('on')) node.addEventListener(key.slice(2), value);
+      else node.setAttribute(key, value === true ? '' : value);
+    }
+    for (const child of children.flat()) if (child != null) node.append(child);
+    return node;
+  }
+
+  async function api(path, params) {
+    const qs = params ? `?${new URLSearchParams(params)}` : '';
+    const response = await fetch(`/api${path}${qs}`, { headers: { Accept: 'application/json' } });
+    if (!response.ok) {
+      const error = new Error(`Request failed (${response.status})`);
+      error.status = response.status;
+      throw error;
+    }
+    return response.json();
+  }
+
+  function formatPrice(product) {
+    return product.priceMinor === null ? 'Price not set' : naira.format(product.priceMinor / 100);
+  }
+
+  function priceNode(product) {
+    return el('p', { class: product.priceMinor === null ? 'price unset' : 'price', text: formatPrice(product) });
+  }
+
+  function badgeNode(product) {
+    return el('span', {
+      class: `badge ${product.availability}`,
+      text: AVAILABILITY_LABELS[product.availability] || product.availability,
+    });
+  }
+
+  function mediaNode(product) {
+    const media = el('div', { class: 'media' });
+    if (typeof product.imageUrl === 'string' && product.imageUrl.startsWith('https://')) {
+      media.append(el('img', { src: product.imageUrl, alt: product.title, loading: 'lazy' }));
+    } else {
+      media.append(el('span', { text: 'No image yet' }));
+    }
+    return media;
+  }
+
+  // ---------- Categories ----------
+  function renderCategories(items) {
+    const nav = $('categories');
+    const make = (slug, label) =>
+      el('button', {
+        type: 'button',
+        class: 'chip',
+        'aria-pressed': String(state.category === slug),
+        text: label,
+        onclick: () => {
+          state.category = slug;
+          state.page = 1;
+          for (const chip of nav.children) chip.setAttribute('aria-pressed', String(chip === chipFor(slug)));
+          loadProducts();
+        },
+      });
+    const chips = new Map();
+    const chipFor = (slug) => chips.get(slug);
+    const all = make('', 'All');
+    chips.set('', all);
+    nav.replaceChildren(all);
+    for (const category of items) {
+      const chip = make(category.slug, category.name);
+      chips.set(category.slug, chip);
+      nav.append(chip);
+    }
+  }
+
+  async function loadCategories() {
+    try {
+      const data = await api('/categories');
+      renderCategories(data.items);
+    } catch {
+      renderCategories([]);
+    }
+  }
+
+  // ---------- Product list ----------
+  function buildParams() {
+    const params = { sort: state.sort, page: state.page, pageSize: PAGE_SIZE };
+    for (const key of ['q', 'category', 'availability', 'minPrice', 'maxPrice']) {
+      if (state[key] !== '') params[key] = state[key];
+    }
+    return params;
+  }
+
+  function setStatus(message, retryLabel, onRetry) {
+    const status = $('status');
+    status.replaceChildren();
+    if (message) status.append(el('p', { text: message }));
+    if (retryLabel) status.append(el('button', { type: 'button', class: 'btn btn-ghost', text: retryLabel, onclick: onRetry }));
+  }
+
+  function renderCard(product) {
+    return el(
+      'li',
+      {},
+      el(
+        'button',
+        {
+          type: 'button',
+          class: 'card',
+          onclick: () => {
+            location.hash = `#/product/${product.slug}`;
+          },
+        },
+        mediaNode(product),
+        el(
+          'div',
+          { class: 'card-body' },
+          el('h2', { class: 'card-title', text: product.title }),
+          el('p', { class: 'meta', text: product.category.name }),
+          priceNode(product),
+          badgeNode(product)
+        )
+      )
+    );
+  }
+
+  function resetFilters() {
+    Object.assign(state, { q: '', availability: '', minPrice: '', maxPrice: '', page: 1 });
+    $('q').value = '';
+    $('f-availability').value = '';
+    $('f-min').value = '';
+    $('f-max').value = '';
+    loadProducts();
+  }
+
+  async function loadProducts() {
+    const current = ++requestId;
+    setStatus('Loading listings…');
+    try {
+      const data = await api('/products', buildParams());
+      if (current !== requestId) return; // a newer request replaced this one
+
+      const grid = $('grid');
+      grid.replaceChildren(...data.items.map(renderCard));
+      totalPages = Math.max(1, Math.ceil(data.total / data.pageSize));
+
+      $('placeholder-notice').hidden = !data.items.some((p) => p.isPlaceholder);
+      $('result-count').textContent = `${data.total} ${data.total === 1 ? 'listing' : 'listings'}`;
+      $('pager').hidden = totalPages <= 1;
+      $('page-label').textContent = `Page ${state.page} of ${totalPages}`;
+      $('prev').disabled = state.page <= 1;
+      $('next').disabled = state.page >= totalPages;
+
+      if (data.items.length === 0) {
+        setStatus('No listings match. Clear the search or filters to see everything.', 'Clear search and filters', resetFilters);
+      } else {
+        setStatus('');
+      }
+    } catch (err) {
+      if (current !== requestId) return;
+      $('grid').replaceChildren();
+      $('pager').hidden = true;
+      $('result-count').textContent = '';
+      const message =
+        err.status === 400
+          ? 'Those search options are not valid. Reset the filters and try again.'
+          : 'Could not load listings. Check your connection and try again.';
+      setStatus(message, 'Try again', loadProducts);
+    }
+  }
+
+  // ---------- Product dialog ----------
+  const dialog = $('product-dialog');
+
+  function showDialogMessage(message) {
+    $('dialog-body').replaceChildren(el('p', { class: 'dialog-message', id: 'dialog-title', text: message }));
+    if (!dialog.open) dialog.showModal();
+  }
+
+  function showProduct(product) {
+    $('dialog-body').replaceChildren(
+      mediaNode(product),
+      el(
+        'div',
+        { class: 'detail-info' },
+        el('p', { class: 'meta', text: product.category.name }),
+        el('h2', { id: 'dialog-title', text: product.title }),
+        priceNode(product),
+        badgeNode(product),
+        product.isPlaceholder ? el('p', { class: 'flag', text: 'Placeholder listing: not a real product.' }) : null,
+        el('p', { class: 'description', text: product.description || 'No description yet.' }),
+        el('p', { class: 'meta', text: 'Ordering is not available yet.' })
+      )
+    );
+    if (!dialog.open) dialog.showModal();
+  }
+
+  async function syncDialogWithHash() {
+    const match = location.hash.match(/^#\/product\/([a-z0-9-]+)$/);
+    if (!match) {
+      if (dialog.open) dialog.close();
+      return;
+    }
+    try {
+      const data = await api(`/products/${match[1]}`);
+      showProduct(data.item);
+    } catch (err) {
+      showDialogMessage(err.status === 404 ? 'That listing was not found.' : 'Could not load this listing. Please try again.');
+    }
+  }
+
+  dialog.addEventListener('close', () => {
+    if (location.hash.startsWith('#/product/')) {
+      history.replaceState(null, '', location.pathname + location.search);
+    }
+  });
+  dialog.addEventListener('click', (event) => {
+    if (event.target === dialog) dialog.close(); // click on the dark backdrop
+  });
+  $('dialog-close').addEventListener('click', () => dialog.close());
+  window.addEventListener('hashchange', syncDialogWithHash);
+
+  // ---------- Controls ----------
+  $('search-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    clearTimeout(debounceTimer);
+    state.q = $('q').value.trim();
+    state.page = 1;
+    loadProducts();
+  });
+
+  $('q').addEventListener('input', () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      state.q = $('q').value.trim();
+      state.page = 1;
+      loadProducts();
+    }, 400);
+  });
+
+  $('sort').addEventListener('change', (event) => {
+    state.sort = event.target.value;
+    state.page = 1;
+    loadProducts();
+  });
+
+  $('filter-toggle').addEventListener('click', (event) => {
+    const filters = $('filters');
+    filters.hidden = !filters.hidden;
+    event.currentTarget.setAttribute('aria-expanded', String(!filters.hidden));
+  });
+
+  $('filters').addEventListener('submit', (event) => {
+    event.preventDefault();
+    state.availability = $('f-availability').value;
+    state.minPrice = $('f-min').value.trim();
+    state.maxPrice = $('f-max').value.trim();
+    state.page = 1;
+    loadProducts();
+  });
+  $('filters-reset').addEventListener('click', resetFilters);
+
+  $('prev').addEventListener('click', () => {
+    if (state.page > 1) {
+      state.page -= 1;
+      loadProducts();
+      window.scrollTo({ top: 0 });
+    }
+  });
+  $('next').addEventListener('click', () => {
+    if (state.page < totalPages) {
+      state.page += 1;
+      loadProducts();
+      window.scrollTo({ top: 0 });
+    }
+  });
+
+  // ---------- Start ----------
+  loadCategories();
+  loadProducts();
+  syncDialogWithHash();
+})();

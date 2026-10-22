@@ -1,0 +1,29 @@
+// Input validation for catalogue endpoints (zod).
+const { z } = require('zod');
+
+const MAX_PRICE_NAIRA = 20_000_000; // keeps kobo values inside a 32-bit integer column
+
+const slug = z
+  .string()
+  .max(120)
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Must be lowercase letters, numbers and hyphens');
+
+const listQuerySchema = z
+  .object({
+    q: z.string().trim().max(100).optional(),
+    category: slug.optional(),
+    availability: z.enum(['available', 'sold_out', 'unconfirmed']).optional(),
+    minPrice: z.coerce.number().int().min(0).max(MAX_PRICE_NAIRA).optional(), // whole naira
+    maxPrice: z.coerce.number().int().min(0).max(MAX_PRICE_NAIRA).optional(), // whole naira
+    sort: z.enum(['newest', 'price_asc', 'price_desc']).default('newest'),
+    page: z.coerce.number().int().min(1).max(1000).default(1),
+    pageSize: z.coerce.number().int().min(1).max(48).default(12),
+  })
+  .refine((v) => v.minPrice === undefined || v.maxPrice === undefined || v.minPrice <= v.maxPrice, {
+    message: 'minPrice cannot be greater than maxPrice',
+    path: ['minPrice'],
+  });
+
+const slugParamSchema = slug;
+
+module.exports = { listQuerySchema, slugParamSchema };
