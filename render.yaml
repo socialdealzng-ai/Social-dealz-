@@ -1,0 +1,27 @@
+# Render Blueprint: one free web service + one free PostgreSQL database.
+# Free-tier limits (spin-down, database expiry) are explained in README.md.
+databases:
+  - name: social-dealz-db
+    plan: free
+    databaseName: social_dealz
+    user: social_dealz
+
+services:
+  - type: web
+    name: social-dealz
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm run start:render
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: social-dealz-db
+          property: connectionString
+      - key: SEED_PLACEHOLDERS
+        value: "true"
